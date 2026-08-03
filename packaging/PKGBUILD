@@ -1,0 +1,27 @@
+# Maintainer: Sabrina <sabrina@localhost>
+# Empaqueta aur-guard (daemon efimero + gancho paru).
+# Uso: ejecutar packaging/mktarball.sh y luego `makepkg -i` en el directorio generado.
+
+pkgname=aur-guard
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Monitor de malware AUR + auditoria de host (daemon efimero + gancho paru)"
+arch=('x86_64')
+url=""
+license=('GPL-3.0-or-later')
+depends=('paru')
+optdepends=('libnotify: alertas desktop con notify-send')
+makedepends=('rust' 'cargo' 'openssl' 'pkg-config')
+options=('!strip')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  cargo build --release --locked --offline
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  install -Dm755 target/release/aur-guard "$pkgdir/usr/bin/aur-guard"
+}
