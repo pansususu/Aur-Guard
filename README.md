@@ -62,7 +62,7 @@ systemctl --user enable --now aur-guard-check.timer
 Desde fuentes del repo:
 
 ```bash
-git clone <URL-DEL-REPO> aur-guard
+git clone https://github.com/pansususu/Aur-Guard aur-guard
 cd aur-guard
 ./packaging/mktarball.sh            # genera el tarball fuente
 cd packaging && makepkg -si        # compila + instala (pide sudo)
