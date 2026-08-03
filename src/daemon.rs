@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
@@ -128,8 +129,15 @@ fn dispatch(cfg: &Config, req: Request) -> Response {
     }
 }
 
-fn handle_conn(mut stream: UnixStream, cfg: Config) {
-    let mut reader = BufReader::new(stream.try_clone().expect("clonar stream"));
+fn handle_conn(mut stream: UnixStream, cfg: Arc<Config>) {
+    let clone = match stream.try_clone() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("aur-guard: fallo al clonar el socket de conexion: {}", e);
+            return;
+        }
+    };
+    let mut reader = BufReader::new(clone);
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
@@ -168,6 +176,7 @@ pub fn run(cfg: Config) -> Result<()> {
     fs::write(pidfile(), format!("{}\n", std::process::id()))?;
 
     let listener = UnixListener::bind(&sock)?;
+    fs::set_permissions(&sock, fs::Permissions::from_mode(0o700))?;
     listener.set_nonblocking(true)?;
     eprintln!("aur-guard daemon listo en {}", sock.display());
 
@@ -181,6 +190,7 @@ pub fn run(cfg: Config) -> Result<()> {
     let term = terminate.clone();
     let act = active.clone();
     let la = last_activity.clone();
+    let cfg = Arc::new(cfg);
     let cfg_thread = cfg.clone();
     let accept_thread = std::thread::spawn(move || {
         let listener = listener;

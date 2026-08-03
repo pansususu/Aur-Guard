@@ -221,3 +221,65 @@ pub fn is_installed(name: &str) -> bool {
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn parse_list_basic() {
+        let text = "foo\n# commentario\n`marcado\nbar baz\n\n  qux\n";
+        assert_eq!(parse_list(text), vec!["foo", "bar", "qux"]);
+    }
+
+    #[test]
+    fn parse_list_drops_invalid_names() {
+        let text = " valid1 \n..\n_invalido\nok-pkg\n";
+        assert_eq!(parse_list(text), vec!["valid1", "ok-pkg"]);
+    }
+
+    #[test]
+    fn valid_name_accepts_pkg_chars() {
+        assert!(valid_name("foo"));
+        assert!(valid_name("foo-git"));
+        assert!(valid_name("a.b_c+2"));
+        assert!(valid_name("foo@bar"));
+        assert!(valid_name("x:y"));
+    }
+
+    #[test]
+    fn valid_name_rejects_bad() {
+        assert!(!valid_name(""));
+        assert!(!valid_name(".dot"));
+        assert!(!valid_name("-dash"));
+        assert!(!valid_name("con espacio"));
+        assert!(!valid_name("acentuó"));
+        assert!(!valid_name("a*b"));
+    }
+
+    #[test]
+    fn normalize_keeps_base_and_strips_suffixes() {
+        assert_eq!(normalize("pkg-git"), vec!["pkg-git".to_string(), "pkg".to_string()]);
+        assert_eq!(normalize("tool-bin"), vec!["tool-bin".to_string(), "tool".to_string()]);
+        assert_eq!(normalize("plain"), vec!["plain".to_string()]);
+    }
+
+    #[test]
+    fn feed_verdict_hits_on_normalized_name() {
+        let mut packages = HashMap::new();
+        packages.insert("evil".to_string(), vec!["camp1".to_string(), "camp2".to_string()]);
+        let state = FeedState { updated_at: 1, packages };
+        let (infected, reasons) = feed_verdict(&state, "evil-git");
+        assert!(infected);
+        assert_eq!(reasons, vec!["camp1", "camp2"]);
+    }
+
+    #[test]
+    fn feed_verdict_misses() {
+        let state = FeedState { updated_at: 1, packages: HashMap::new() };
+        let (infected, reasons) = feed_verdict(&state, "clean");
+        assert!(!infected);
+        assert!(reasons.is_empty());
+    }
+}

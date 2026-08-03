@@ -92,3 +92,65 @@ pub fn ensure_hook() -> Result<String> {
         format!("gancho paru instalado en {}", path.display())
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_is_ours_accepts_hook_variants() {
+        assert!(line_is_ours(HOOK_LINE));
+        assert!(line_is_ours("  PreBuildCommand = aur-guard gate  "));
+        assert!(line_is_ours("PreBuildCommand   aur-guard gate"));
+    }
+
+    #[test]
+    fn line_is_ours_rejects_others() {
+        assert!(!line_is_ours("PreBuildCommand = something else"));
+        assert!(!line_is_ours("# comentario"));
+        assert!(!line_is_ours(""));
+    }
+
+    #[test]
+    fn has_conflicting_prebuild_finds_conflict() {
+        let lines = vec!["[bin]".to_string(), "PreBuildCommand = other".to_string()];
+        assert_eq!(
+            has_conflicting_prebuild(&lines),
+            Some("PreBuildCommand = other".to_string())
+        );
+    }
+
+    #[test]
+    fn has_conflicting_prebuild_none_when_ok() {
+        let lines = vec!["[bin]".to_string(), HOOK_LINE.to_string()];
+        assert_eq!(has_conflicting_prebuild(&lines), None);
+    }
+
+    #[test]
+    fn insert_under_bin_after_existing_section() {
+        let out = insert_under_bin(vec!["[bin]".to_string(), "MakepkgArgs".to_string()]);
+        assert_eq!(out, vec![
+            "[bin]".to_string(),
+            HOOK_LINE.to_string(),
+            "MakepkgArgs".to_string(),
+            String::new(),
+        ]);
+    }
+
+    #[test]
+    fn insert_under_bin_no_section_appends() {
+        let out = insert_under_bin(vec!["A".to_string()]);
+        assert_eq!(out, vec![
+            "A".to_string(),
+            String::new(),
+            "[bin]".to_string(),
+            HOOK_LINE.to_string(),
+        ]);
+    }
+
+    #[test]
+    fn insert_under_bin_idempotent() {
+        let lines = vec!["[bin]".to_string(), HOOK_LINE.to_string()];
+        assert_eq!(insert_under_bin(lines), vec!["[bin]".to_string(), HOOK_LINE.to_string()]);
+    }
+}
